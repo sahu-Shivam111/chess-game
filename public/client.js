@@ -223,6 +223,10 @@ socket.on("move", (move) => {
   
 });
 
+socket.on("gameOver", ({ winner }) => {
+  alert(` Checkmate! ${winner} wins!`);
+});
+
 
 // initial
 
