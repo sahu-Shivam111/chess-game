@@ -13,6 +13,7 @@
 
 <body>
     <h1 style="text-align:center;">Real-Time Game</h1>
+       <p id="status" class="text-center">Connecting...</p>
 
     <div class="game-info">
         <p id="player-role">You are: Spectator</p>
@@ -20,19 +21,22 @@
     </div>
 
     <div class="captured-pieces-container">
-        <div class="captured black-captured">
-            <h3 >Black Captured</h3>
-            <div id="blackCaptured"></div>
+        <div class="captured ">
+            <h3 style="color:white" >White Captured</h3>
+            <div id="whiteCaptured" class="whiteCaptured"></div>
         </div>
 
         <div class="w-full h-full flex items-center justify-center ">
             <div class="chessboard"> </div>
         </div>
-        <div class="captured white-captured">
-            <h3 style="color:white">White Captured</h3>
-            <div id="whiteCaptured"></div>
+        <div class="captured ">
+            <h3 >Black Captured</h3>
+            <div id="blackCaptured" class="blackCaptured"></div>
         </div>
+       
+
     </div>
+    <button id="restartBtn" class="restart-btn">Restart Game</button>
 
 
     <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"
