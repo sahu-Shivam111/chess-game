@@ -4,229 +4,231 @@ const chess = new Chess();
 const boardElement = document.querySelector(".chessboard");
 const playerRoleText = document.getElementById("player-role");
 const turnIndicator = document.getElementById("turn-indicator");
+const statusText = document.getElementById("status");
 
 let playerRole = null;
+let gameReady = false;
 
-let whiteCapturedPieces = [];
-let blackCapturedPieces = [];
+// Store captured pieces locally (persisted)
+let capturedWhite = JSON.parse(sessionStorage.getItem("capturedWhite")) || [];
+let capturedBlack = JSON.parse(sessionStorage.getItem("capturedBlack")) || [];
+
+// ♟ Unicode map
+const pieceSymbols = {
+  p: "♟", r: "♜", n: "♞", b: "♝", q: "♛", k: "♚",
+  P: "♙", R: "♖", N: "♘", B: "♗", Q: "♕", K: "♔"
+};
 
 
-// ✅ Helper — get Unicode piece symbol
-function getPieceUnicode(piece) {
-  const unicodePieces = {
-    p: "♟", r: "♜", n: "♞", b: "♝", q: "♛", k: "♚",
-    P: "♙", R: "♖", N: "♘", B: "♗", Q: "♕", K: "♔",
-  };
-  return unicodePieces[piece] || "";
+
+
+// 🧩 Render captured pieces
+function renderCaptured() {
+  const whiteDiv = document.getElementById("whiteCaptured");
+  const blackDiv = document.getElementById("blackCaptured");
+
+  whiteDiv.innerHTML = capturedWhite.map(p => pieceSymbols[p]).join(" ");
+  blackDiv.innerHTML = capturedBlack.map(p => pieceSymbols[p]).join(" ");
 }
 
-// ✅ Helper — find a king’s square
-function getKingSquare(color) {
+function highlightKing(color) {
   const board = chess.board();
-  for (let row = 0; row < 8; row++) {
-    for (let col = 0; col < 8; col++) {
-      const piece = board[row][col];
-      if (piece && piece.type === "k" && piece.color === color) {
-        const file = "abcdefgh"[col];
-        const rank = 8 - row;
-        return `${file}${rank}`;
+  for (let r = 0; r < 8; r++) {
+    for (let c = 0; c < 8; c++) {
+      const p = board[r][c];
+      if (p && p.type === "k" && p.color === color) {
+        const file = "abcdefgh"[c];
+        const rank = 8 - r;
+        const sq = `${file}${rank}`;
+        const el = document.querySelector(`[data-square="${sq}"]`);
+        if (el) el.classList.add("in-check");
       }
     }
   }
-  return null;
-}
-
-function updateCapturedUI() {
-  const whiteCapturedDiv = document.getElementById('whiteCaptured');
-  const blackCapturedDiv = document.getElementById('blackCaptured');
-
-  whiteCapturedDiv.innerHTML = whiteCapturedPieces.join(' ');
-  blackCapturedDiv.innerHTML = blackCapturedPieces.join(' ');
-
-
-  sessionStorage.setItem('whiteCaptured', JSON.stringify(whiteCapturedPieces));
-  sessionStorage.setItem('blackCaptured', JSON.stringify(blackCapturedPieces));
 }
 
 
+// When in check
+socket.on("check", ({ colorInCheck }) => {
+  const side = colorInCheck; // 'w' or 'b'
+  highlightKing(side);
+  const name = side === "w" ? "White" : "Black";
+  const ti = document.getElementById("turn-indicator");
+  if (ti) {
+    ti.textContent = `Turn: ${name} — Check!`;
+    ti.style.color = "red";
+  }
+});
+
+// Clear check highlight
+socket.on("clearCheck", () => {
+  document.querySelectorAll(".in-check").forEach(el => el.classList.remove("in-check"));
+  const ti = document.getElementById("turn-indicator");
+  if (ti) {
+    ti.style.color = "#FFFF0079";
+  }
+});
+
+// When game is over
+socket.on("gameOver", ({ winner, reason }) => {
+  const status = document.getElementById("status");
+  if (status) {
+    status.textContent = `${winner} wins — ${reason}`;
+  }
+  const ti = document.getElementById("turn-indicator");
+  if (ti) {
+    ti.textContent = `Game Over (${reason})`;
+    ti.style.color = "gold";
+  }
+});
 
 
-
-
-// ✅ Render board each update
+// ♜ Render board
 function renderBoard() {
   const board = chess.board();
   boardElement.innerHTML = "";
 
-  // find king in check
-  let inCheckColor = null;
-  if (chess.in_check()) {
-    // the side to move is IN check
-    inCheckColor = chess.turn();
-  }
-  const kingSquareInCheck = inCheckColor ? getKingSquare(inCheckColor) : null;
-
   board.forEach((row, rowIndex) => {
     row.forEach((square, colIndex) => {
-      const squareElement = document.createElement("div");
-      const squareColor = (rowIndex + colIndex) % 2 === 0 ? "light" : "dark";
-      squareElement.classList.add("square", squareColor);
+      const div = document.createElement("div");
+      const color = (rowIndex + colIndex) % 2 === 0 ? "light" : "dark";
+      div.classList.add("square", color);
 
       const file = "abcdefgh"[colIndex];
       const rank = 8 - rowIndex;
       const squareNotation = `${file}${rank}`;
-      squareElement.dataset.square = squareNotation;
+      div.dataset.square = squareNotation;
 
-      // add piece
       if (square) {
-        const pieceElement = document.createElement("div");
-        pieceElement.textContent = getPieceUnicode(
+        const piece = document.createElement("div");
+        piece.textContent = pieceSymbols[
           square.color === "w" ? square.type.toUpperCase() : square.type
-        );
-        pieceElement.classList.add("piece", square.color);
-        pieceElement.draggable = playerRole === square.color;
+        ];
+        piece.classList.add("piece", square.color);
 
-        pieceElement.addEventListener("dragstart", (e) => {
-          if (chess.turn() !== playerRole) return e.preventDefault();
-          e.dataTransfer.setData("source", squareNotation);
-          e.target.classList.add("dragging");
-        });
+        // ✅ Allow dragging only for your pieces and your turn
+       const isPlayerTurn = gameReady && chess.turn() === playerRole;
+const canDrag = square.color === playerRole && isPlayerTurn;
 
-        pieceElement.addEventListener("dragend", (e) => {
-          e.target.classList.remove("dragging");
-        });
+        piece.draggable = canDrag;
 
-        squareElement.appendChild(pieceElement);
+        if (canDrag) {
+          piece.addEventListener("dragstart", (e) => {
+            e.dataTransfer.setData("source", squareNotation);
+          });
+        }
+
+        div.appendChild(piece);
       }
 
-      // ✅ Highlight king if in check
-      if (squareNotation === kingSquareInCheck) {
-        squareElement.classList.add("in-check");
-      }
-
-      squareElement.addEventListener("dragover", (e) => e.preventDefault());
-      squareElement.addEventListener("drop", (e) => {
+      div.addEventListener("dragover", (e) => e.preventDefault());
+      div.addEventListener("drop", (e) => {
         const source = e.dataTransfer.getData("source");
         const target = e.target.dataset.square || e.target.parentNode.dataset.square;
-        handleMove(source, target);
+        if (source && target && source !== target) {
+          handleMove(source, target);
+        }
       });
 
-      boardElement.appendChild(squareElement);
+      boardElement.appendChild(div);
     });
   });
 
-  // Flip for black player
+  // Flip for black
   if (playerRole === "b") boardElement.classList.add("flipped");
   else boardElement.classList.remove("flipped");
 
-  // update display
-  updateGameInfo();
+  renderCaptured();
 }
 
-// ✅ Update status text
-function updateGameInfo() {
-  // your color
-  if (playerRole === "w") playerRoleText.textContent = "You are: White";
-  else if (playerRole === "b") playerRoleText.textContent = "You are: Black";
-  else playerRoleText.textContent = "You are: Spectator";
-
-  // whose turn
-  const turn = chess.turn() === "w" ? "White" : "Black";
-  turnIndicator.textContent = `Turn: ${turn}`;
-  turnIndicator.style.color = turn === "White" ? "#fff" : "#000";
-
-  // check
-  if (chess.in_check()) {
-    const checkedSide = chess.turn() === "w" ? "White" : "Black";
-    turnIndicator.textContent = `Turn: ${turn} — ${checkedSide} is in Check!`;
-    turnIndicator.style.color = "red";
-  }
-
-  // checkmate
-  if (chess.in_checkmate()) {
-    const loser = chess.turn() === "w" ? "White" : "Black";
-    const winner = loser === "White" ? "Black" : "White";
-    turnIndicator.textContent = `Checkmate! ${winner} wins!`;
-    turnIndicator.style.color = "red";
-  }
-  updateCapturedUI();
-
-}
-
-// ✅ Handle move drag/drop
+// 🕹 Handle move
 function handleMove(source, target) {
-  const move = chess.move({ from: source, to: target, promotion: "q" });
-
-  // invalid move
-  if (move === null) return false;
-
-  // send move to server
-  socket.emit("move", move);
-
-  // check if a piece was captured
-  if (move.captured) {
-    if (move.color === "w") {
-      // white moved, so black’s piece got captured
-      blackCapturedPieces.push(getPieceUnicode(move.captured));
-    } else {
-      // black moved, so white’s piece got captured
-      whiteCapturedPieces.push(getPieceUnicode(move.captured.toUpperCase()));
-    }
-  }
-
-  renderBoard();  // re-render the updated board
-  updateCapturedUI();  // show captured pieces
-  updateGameInfo(); // show check, turn, etc.
-  return true;
+  if (!gameReady) return;
+  socket.emit("move", { from: source, to: target, promotion: "q" });
 }
 
-window.addEventListener("load", () => {
-  const savedWhite = sessionStorage.getItem('whiteCaptured');
-  const savedBlack = sessionStorage.getItem('blackCaptured');
+// ⚡ SOCKET EVENTS
 
-  if (savedWhite) whiteCapturedPieces = JSON.parse(savedWhite);
-  if (savedBlack) blackCapturedPieces = JSON.parse(savedBlack);
-
-  updateCapturedUI(); // show them immediately
-  renderBoard();
-});
-
-
-// ✅ Socket listeners
 socket.on("playerRole", (role) => {
   playerRole = role;
-  renderBoard();
-  
+  playerRoleText.textContent = `You are: ${role === "w" ? "White" : "Black"}`;
+  statusText.textContent = "Connecting...";
+  turnIndicator.textContent = "";
 });
 
-socket.on("spectatorRole", () => {
-  playerRole = null;
-  renderBoard();
+socket.on("waiting", (msg) => {
+  statusText.textContent = msg;
+  gameReady = false;
+});
+
+socket.on("message", (msg) => {
+  statusText.textContent = msg;
+  if (msg.includes("start")) {
+    gameReady = true;
+  }
 });
 
 socket.on("boardState", (fen) => {
   chess.load(fen);
+
+  gameReady = true;
   renderBoard();
+  const turn = chess.turn() === "w" ? "White" : "Black";
+  turnIndicator.textContent = `Turn: ${turn}`;
 });
 
-socket.on("move", (move) => {
-  const result = chess.move(move);
-  if (result && result.captured) {
-    if (result.color === "w") {
-      blackCapturedPieces.push(getPieceUnicode(result.captured));
-    } else {
-      whiteCapturedPieces.push(getPieceUnicode(result.captured.toUpperCase()));
-    }
-     updateCapturedUI();
+socket.on("noMoves", ({ sideToMove }) => {
+  const name = sideToMove === 'w' ? 'White' : 'Black';
+  const status = document.getElementById('status');
+  if (status) status.textContent = `${name} has no legal moves left.`;
+});
+
+socket.on("pieceCaptured", ({ capturedBy, capturedOf, capturedType }) => {
+  // Store piece in the correct array
+  if (capturedOf === "white") {
+    capturedWhite.push(capturedType);
+  } else if (capturedOf === "black") {
+    capturedBlack.push(capturedType);
   }
-  renderBoard();
-  
+
+  // Save updated lists in session storage
+  sessionStorage.setItem("capturedWhite", JSON.stringify(capturedWhite));
+  sessionStorage.setItem("capturedBlack", JSON.stringify(capturedBlack));
+
+  // Re-render captured pieces on screen
+  renderCaptured();
 });
 
-socket.on("gameOver", ({ winner }) => {
-  alert(` Checkmate! ${winner} wins!`);
+
+
+
+socket.on("gameOver", ({ winner, reason }) => {
+  if (reason === "Checkmate") {
+    statusText.textContent = `Checkmate! ${winner} wins!`;
+  } else if (reason === "Stalemate") {
+    statusText.textContent = "Stalemate! It's a draw.";
+  } else if (reason === "Draw") {
+    statusText.textContent = "Draw by rule.";
+  }
+
+  gameReady = false;
+
+  // Clear captured after 5s (new game)
+  setTimeout(() => {
+    capturedWhite = [];
+    capturedBlack = [];
+    sessionStorage.clear();
+    renderCaptured();
+  }, 5000);
 });
 
-
-// initial
-
+// ♻️ Restart manually
+const restartBtn = document.getElementById("restartBtn");
+if (restartBtn) {
+  restartBtn.addEventListener("click", () => {
+    sessionStorage.clear();
+    capturedWhite = [];
+    capturedBlack = [];
+    socket.emit("restartGame");
+  });
+}
